@@ -15,13 +15,12 @@ st.set_page_config(page_title="Ryder Cup 2026", layout="centered")
 
 # --- INITIALIZE STATE ---
 if 'master_scores' not in st.session_state:
-    # This keeps a record for every match and every hole
     st.session_state.master_scores = {}
 
 if 'h_idx' not in st.session_state:
     st.session_state.h_idx = 1
 
-# --- CALLBACKS (Fixes the skipping) ---
+# --- CALLBACKS ---
 def next_hole():
     if st.session_state.h_idx < 18:
         st.session_state.h_idx += 1
@@ -31,7 +30,6 @@ def prev_hole():
         st.session_state.h_idx -= 1
 
 def save_score(m_name, h_num, win):
-    # Store in a dictionary: { "Match 1": {1: "Gabe", 2: "Halve"} }
     if m_name not in st.session_state.master_scores:
         st.session_state.master_scores[m_name] = {}
     st.session_state.master_scores[m_name][h_num] = win
@@ -45,7 +43,7 @@ tab_in, tab_track = st.tabs(["⛳ RECORD", "📊 TRACKER"])
 with tab_in:
     match_choice = st.selectbox("Select Match", ["Match 1", "Match 2", "Match 3", "Match 4", "Match 5"])
     
-    # STEPPER (Using on_click callbacks to prevent skipping)
+    # STEPPER
     c1, c2, c3 = st.columns([1, 2, 1])
     with c1:
         st.button("⬅️", on_click=prev_hole, use_container_width=True)
@@ -57,8 +55,7 @@ with tab_in:
     h = st.session_state.h_idx
     st.info(f"Par {CHISLEHURST_MAP[h]['par']} | SI {CHISLEHURST_MAP[h]['si']}")
 
-    # --- ILLUMINATION LOGIC ---
-    # Check what is currently saved for this match and hole
+    # Check saved result
     current_match_results = st.session_state.master_scores.get(match_choice, {})
     saved_win = current_match_results.get(h, None)
 
@@ -78,4 +75,18 @@ with tab_in:
     with cb:
         st.button("BOT.", 
                   type="primary" if saved_win == "Bottomley" else "secondary", 
-                  use_container_width=True,
+                  use_container_width=True, 
+                  on_click=save_score, args=(match_choice, h, "Bottomley"))
+
+with tab_track:
+    st.write("### Live Scores")
+    if st.session_state.master_scores:
+        summary_data = []
+        for m, holes in st.session_state.master_scores.items():
+            for h_num, win in holes.items():
+                summary_data.append({"Match": m, "Hole": h_num, "Winner": win})
+        
+        df = pd.DataFrame(summary_data).sort_values(by=["Match", "Hole"])
+        st.dataframe(df, use_container_width=True, hide_index=True)
+    else:
+        st.write("No scores recorded yet.")
