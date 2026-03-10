@@ -1,10 +1,7 @@
 import streamlit as st
-from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 
-# 1. DATABASE CONFIG (Hard-coded for reliability)
-SHEET_URL = "https://docs.google.com/spreadsheets/d/1fPj-sdgJXymXE-JY6TMZwG231gkcoq2DqM5kLYYie8Y/edit?usp=sharing"
-
+# 1. DATA: CHISLEHURST GC
 CHISLEHURST_MAP = {
     1: {"par": 5, "si": 11}, 2: {"par": 4, "si": 7},  3: {"par": 3, "si": 3},
     4: {"par": 4, "si": 15}, 5: {"par": 3, "si": 17}, 6: {"par": 4, "si": 1},
@@ -16,36 +13,29 @@ CHISLEHURST_MAP = {
 
 st.set_page_config(page_title="Ryder Cup 2026", layout="centered")
 
-# Establish Connection using the URL directly
-conn = st.connection("gsheets", type=GSheetsConnection)
+# Initialize Master Scoreboard in Session State
+# Note: In a live deploy, we'd use a real DB, but let's get the UI perfect first
+if 'master_scores' not in st.session_state:
+    st.session_state.master_scores = pd.DataFrame(columns=["Match", "Hole", "Winner"])
 
-if 'h_idx' not in st.session_state: 
+if 'h_idx' not in st.session_state:
     st.session_state.h_idx = 1
 
-def save_result(m_id, h, win):
-    try:
-        # Read existing data from 'Scores' tab
-        try:
-            df = conn.read(spreadsheet=SHEET_URL, worksheet="Scores")
-        except:
-            # If tab is empty/missing, create the structure
-            df = pd.DataFrame(columns=["MatchID", "Hole", "Winner"])
-        
-        # Add new result
-        new_row = pd.DataFrame([{"MatchID": m_id, "Hole": h, "Winner": win}])
-        updated_df = pd.concat([df, new_row], ignore_index=True)
-        
-        # Write back to Sheet
-        conn.update(spreadsheet=SHEET_URL, worksheet="Scores", data=updated_df)
-        st.success(f"Hole {h} synced!")
-    except Exception as e:
-        st.error("Connection failed. Make sure the Sheet is set to 'Anyone with link can EDIT'.")
-        st.exception(e)
+# --- FUNCTIONS ---
+def save_score(m_name, h_num, win):
+    new_data = pd.DataFrame([{"Match": m_name, "Hole": h_num, "Winner": win}])
+    # Overwrite if hole already exists for this match
+    mask = (st.session_state.master_scores['Match'] == m_name) & (st.session_state.master_scores['Hole'] == h_num)
+    if mask.any():
+        st.session_state.master_scores = st.session_state.master_scores[~mask]
+    
+    st.session_state.master_scores = pd.concat([st.session_state.master_scores, new_data], ignore_index=True)
+    st.toast(f"Hole {h_num} Recorded!")
 
 # --- UI ---
 st.title("🏆 RYDER CUP 2026")
 
-tab_in, tab_track = st.tabs(["⛳ RECORD SCORE", "📊 LIVE TRACKER"])
+tab_in, tab_track = st.tabs(["⛳ RECORD", "📊 TRACKER"])
 
 with tab_in:
     match_choice = st.selectbox("Select Match", ["Match 1", "Match 2", "Match 3", "Match 4", "Match 5"])
@@ -54,29 +44,23 @@ with tab_in:
     with c1:
         if st.button("⬅️"): st.session_state.h_idx = max(1, st.session_state.h_idx - 1)
     with c2:
-        st.markdown(f"<h3 style='text-align: center;'>HOLE {st.session_state.h_idx}</h3>", unsafe_allow_html=True)
+        st.markdown(f"<h3 style='text-align: center; margin: 0;'>HOLE {st.session_state.h_idx}</h3>", unsafe_allow_html=True)
     with c3:
         if st.button("➡️"): st.session_state.h_idx = min(18, st.session_state.h_idx + 1)
 
     h = st.session_state.h_idx
-    st.info(f"**{'FOURSOMES' if h <= 9 else 'SCRAMBLE'}** | Par {CHISLEHURST_MAP[h]['par']} | SI {CHISLEHURST_MAP[h]['si']}")
+    st.info(f"Par {CHISLEHURST_MAP[h]['par']} | SI {CHISLEHURST_MAP[h]['si']}")
 
     cg, ch, cb = st.columns(3)
-    if cg.button("GABE", use_container_width=True): save_result(match_choice, h, "Gabe")
-    if ch.button("HALVE", use_container_width=True): save_result(match_choice, h, "Halve")
-    if cb.button("BOT.", use_container_width=True): save_result(match_choice, h, "Bottomley")
+    if cg.button("GABE", use_container_width=True): save_score(match_choice, h, "Gabe")
+    if ch.button("HALVE", use_container_width=True): save_score(match_choice, h, "Halve")
+    if cb.button("BOT.", use_container_width=True): save_score(match_choice, h, "Bottomley")
 
 with tab_track:
-    st.write("### Real-Time Scores")
-    if st.button("Refresh Board"):
-        st.rerun()
-    
-    try:
-        # Read fresh data
-        data = conn.read(spreadsheet=SHEET_URL, worksheet="Scores", ttl=0)
-        if not data.empty:
-            st.dataframe(data, use_container_width=True, hide_index=True)
-        else:
-            st.info("No scores recorded yet.")
-    except:
-        st.warning("Check your Google Sheet tab name is exactly 'Scores'.")
+    st.write("### Live Leaderboard")
+    if not st.session_state.master_scores.empty:
+        # Simple summary
+        df = st.session_state.master_scores.sort_values(by=["Match", "Hole"])
+        st.dataframe(df, use_container_width=True, hide_index=True)
+    else:
+        st.write("No scores recorded yet.")
