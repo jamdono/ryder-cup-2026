@@ -13,23 +13,28 @@ CHISLEHURST_MAP = {
 
 st.set_page_config(page_title="Ryder Cup 2026", layout="centered")
 
-# Initialize Master Scoreboard in Session State
-# Note: In a live deploy, we'd use a real DB, but let's get the UI perfect first
+# --- INITIALIZE STATE ---
 if 'master_scores' not in st.session_state:
-    st.session_state.master_scores = pd.DataFrame(columns=["Match", "Hole", "Winner"])
+    # This keeps a record for every match and every hole
+    st.session_state.master_scores = {}
 
 if 'h_idx' not in st.session_state:
     st.session_state.h_idx = 1
 
-# --- FUNCTIONS ---
+# --- CALLBACKS (Fixes the skipping) ---
+def next_hole():
+    if st.session_state.h_idx < 18:
+        st.session_state.h_idx += 1
+
+def prev_hole():
+    if st.session_state.h_idx > 1:
+        st.session_state.h_idx -= 1
+
 def save_score(m_name, h_num, win):
-    new_data = pd.DataFrame([{"Match": m_name, "Hole": h_num, "Winner": win}])
-    # Overwrite if hole already exists for this match
-    mask = (st.session_state.master_scores['Match'] == m_name) & (st.session_state.master_scores['Hole'] == h_num)
-    if mask.any():
-        st.session_state.master_scores = st.session_state.master_scores[~mask]
-    
-    st.session_state.master_scores = pd.concat([st.session_state.master_scores, new_data], ignore_index=True)
+    # Store in a dictionary: { "Match 1": {1: "Gabe", 2: "Halve"} }
+    if m_name not in st.session_state.master_scores:
+        st.session_state.master_scores[m_name] = {}
+    st.session_state.master_scores[m_name][h_num] = win
     st.toast(f"Hole {h_num} Recorded!")
 
 # --- UI ---
@@ -40,27 +45,37 @@ tab_in, tab_track = st.tabs(["⛳ RECORD", "📊 TRACKER"])
 with tab_in:
     match_choice = st.selectbox("Select Match", ["Match 1", "Match 2", "Match 3", "Match 4", "Match 5"])
     
+    # STEPPER (Using on_click callbacks to prevent skipping)
     c1, c2, c3 = st.columns([1, 2, 1])
     with c1:
-        if st.button("⬅️"): st.session_state.h_idx = max(1, st.session_state.h_idx - 1)
+        st.button("⬅️", on_click=prev_hole, use_container_width=True)
     with c2:
         st.markdown(f"<h3 style='text-align: center; margin: 0;'>HOLE {st.session_state.h_idx}</h3>", unsafe_allow_html=True)
     with c3:
-        if st.button("➡️"): st.session_state.h_idx = min(18, st.session_state.h_idx + 1)
+        st.button("➡️", on_click=next_hole, use_container_width=True)
 
     h = st.session_state.h_idx
     st.info(f"Par {CHISLEHURST_MAP[h]['par']} | SI {CHISLEHURST_MAP[h]['si']}")
 
-    cg, ch, cb = st.columns(3)
-    if cg.button("GABE", use_container_width=True): save_score(match_choice, h, "Gabe")
-    if ch.button("HALVE", use_container_width=True): save_score(match_choice, h, "Halve")
-    if cb.button("BOT.", use_container_width=True): save_score(match_choice, h, "Bottomley")
+    # --- ILLUMINATION LOGIC ---
+    # Check what is currently saved for this match and hole
+    current_match_results = st.session_state.master_scores.get(match_choice, {})
+    saved_win = current_match_results.get(h, None)
 
-with tab_track:
-    st.write("### Live Leaderboard")
-    if not st.session_state.master_scores.empty:
-        # Simple summary
-        df = st.session_state.master_scores.sort_values(by=["Match", "Hole"])
-        st.dataframe(df, use_container_width=True, hide_index=True)
-    else:
-        st.write("No scores recorded yet.")
+    st.write("Who won this hole?")
+    cg, ch, cb = st.columns(3)
+    
+    with cg:
+        st.button("GABE", 
+                  type="primary" if saved_win == "Gabe" else "secondary", 
+                  use_container_width=True, 
+                  on_click=save_score, args=(match_choice, h, "Gabe"))
+    with ch:
+        st.button("HALVE", 
+                  type="primary" if saved_win == "Halve" else "secondary", 
+                  use_container_width=True, 
+                  on_click=save_score, args=(match_choice, h, "Halve"))
+    with cb:
+        st.button("BOT.", 
+                  type="primary" if saved_win == "Bottomley" else "secondary", 
+                  use_container_width=True,
