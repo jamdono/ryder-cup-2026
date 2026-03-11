@@ -13,9 +13,9 @@ CHISLEHURST_MAP = {
 
 st.set_page_config(page_title="Ryder Cup 2026", layout="centered")
 
-# 2. DATABASE CONNECTION
-# This uses the TiDB secrets you pasted earlier
-conn = st.connection('tidb', type='sql')
+# 2. DATABASE CONNECTION (Using PyMySQL for easier installation)
+# This looks at your Secrets
+conn = st.connection('tidb', type='sql', driver="pymysql")
 
 # Initialize Table
 with conn.session as s:
@@ -52,11 +52,14 @@ with tab_in:
     h = st.session_state.h_idx
     st.info(f"Par {CHISLEHURST_MAP[h]['par']} | SI {CHISLEHURST_MAP[h]['si']}")
 
-    # Check for highlight
+    # Get Winner for Highlight
     saved_win = None
-    existing = conn.query(f"SELECT winner FROM ryder_scores WHERE match_id = '{match_choice}' AND hole = {h}", ttl=0)
-    if not existing.empty:
-        saved_win = existing.iloc[0]['winner']
+    try:
+        existing = conn.query(f"SELECT winner FROM ryder_scores WHERE match_id = '{match_choice}' AND hole = {h}", ttl=0)
+        if not existing.empty:
+            saved_win = existing.iloc[0]['winner']
+    except:
+        pass
 
     cg, ch, cb = st.columns(3)
     if cg.button("GABE", type="primary" if saved_win == "Gabe" else "secondary", use_container_width=True):
@@ -71,8 +74,11 @@ with tab_in:
 
 with tab_track:
     st.write("### Live Leaderboard")
-    df = conn.query("SELECT * FROM ryder_scores ORDER BY match_id, hole", ttl=0)
-    if not df.empty:
-        st.dataframe(df, use_container_width=True, hide_index=True)
-    else:
-        st.info("No scores in the cloud yet.")
+    try:
+        df = conn.query("SELECT * FROM ryder_scores ORDER BY match_id, hole", ttl=0)
+        if not df.empty:
+            st.dataframe(df, use_container_width=True, hide_index=True)
+        else:
+            st.info("No scores in the cloud yet.")
+    except:
+        st.warning("Connecting to cloud...")
