@@ -22,9 +22,8 @@ def get_engine():
     try:
         s = st.secrets["connections"]["tidb"]
         conn_url = f"mysql+pymysql://{s['username']}:{s['password']}@{s['host']}:{s['port']}/{s['database']}?ssl_ca=/etc/ssl/certs/ca-certificates.crt"
-        return create_engine(conn_url, pool_pre_ping=True)
+        return create_engine(conn_url, pool_pre_ping=True, pool_recycle=3600)
     except Exception as e:
-        st.error(f"Database Error: {e}")
         return None
 
 engine = get_engine()
@@ -33,7 +32,8 @@ engine = get_engine()
 def get_all_scores():
     if not engine: return pd.DataFrame()
     try:
-        return pd.read_sql("SELECT * FROM ryder_scores", engine)
+        with engine.connect() as conn:
+            return pd.read_sql("SELECT * FROM ryder_scores", conn)
     except:
         return pd.DataFrame()
 
@@ -51,6 +51,45 @@ def calculate_match_result(df, match_name):
     else:
         return "All Square", 0.5, 0.5
 
-# --- UI HEADER ---
-all_data = get_all_scores()
-proj_g, proj_b = 0.0, 0.0
+# --- DASHBOARD FRAGMENT (Updates every 60s) ---
+@st.fragment(run_every=60)
+def show_dashboard():
+    all_data = get_all_scores()
+    proj_g, proj_b = 0.0, 0.0
+
+    for m in MATCHES:
+        _, pg, pb = calculate_match_result(all_data, m)
+        proj_g += pg
+        proj_b += pb
+
+    # 1. FIXED HEADER
+    st.markdown(f"""
+    <div style="background-color: #1e3d59; padding: 15px; border-radius: 10px; border: 2px solid #ffc13b; margin-bottom: 20px; text-align: center;">
+        <h1 style="color: white; margin: 0; font-size: 24px;">🏆 RYDER CUP 2026</h1>
+        <p style="color: #ffc13b; font-size: 20px; font-weight: bold; margin: 5px 0;">
+            PROJECTED: Team Gabe {proj_g} — {proj_b} Team Bot.
+        </p>
+        <p style="color: #bdc3c7; font-size: 11px; margin: 0;">
+            Auto-Sync Active • {datetime.datetime.now().strftime('%H:%M:%S')}
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    tab_in, tab_track = st.tabs(["⛳ RECORD", "📊 TRACKER"])
+
+    with tab_in:
+        match_choice = st.selectbox("Select Match", MATCHES)
+        current_status, _, _ = calculate_match_result(all_data, match_choice)
+        
+        # Centered "This match" status
+        st.markdown(f"<div style='text-align: center; color: #1e3d59; font-size: 20px; font-weight: bold; margin: 10px 0;'>This match: {current_status}</div>", unsafe_allow_html=True)
+        
+        if 'h_idx' not in st.session_state: st.session_state.h_idx = 1
+        
+        c1, c2, c3 = st.columns([1, 2, 1])
+        with c1: 
+            if st.button("⬅️", use_container_width=True, key="p1"):
+                st.session_state.h_idx = max(1, st.session_state.h_idx - 1)
+                st.rerun()
+        with c2: 
+            st.markdown(f"<h3 style='text-align: center; margin: 0;'>HOLE {st.session_state.h_idx}</h3>", unsafe_allow_html=True)
