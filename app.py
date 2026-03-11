@@ -13,11 +13,11 @@ CHISLEHURST_MAP = {
 
 st.set_page_config(page_title="Ryder Cup 2026", layout="centered")
 
-# 2. DATABASE CONNECTION (Using PyMySQL for easier installation)
+# 2. DATABASE CONNECTION (Using PyMySQL for guaranteed installation)
 # This looks at your Secrets
 conn = st.connection('tidb', type='sql', driver="pymysql")
 
-# Initialize Table
+# Initialize Table (Runs only if table doesn't exist)
 with conn.session as s:
     s.execute('CREATE TABLE IF NOT EXISTS ryder_scores (match_id VARCHAR(50), hole INT, winner VARCHAR(20), PRIMARY KEY (match_id, hole));')
     s.commit()
@@ -42,11 +42,12 @@ st.title("🏆 RYDER CUP 2026")
 tab_in, tab_track = st.tabs(["⛳ RECORD", "📊 TRACKER"])
 
 with tab_in:
-    match_choice = st.selectbox("Select Match", ["Match 1", "Match 2", "Match 3", "Match 4", "Match 5"])
+    match_list = ["Match 1", "Match 2", "Match 3", "Match 4", "Match 5"]
+    match_choice = st.selectbox("Select Match", match_list)
     
     c1, c2, c3 = st.columns([1, 2, 1])
     with c1: st.button("⬅️", on_click=change_hole, args=(-1,), use_container_width=True)
-    with c2: st.markdown(f"<h3 style='text-align: center; margin: 0;'>HOLE {st.session_state.h_idx}</h3>", unsafe_allow_html=True)
+    with c2: st.markdown(f"<h3 style='text-align: center;'>HOLE {st.session_state.h_idx}</h3>", unsafe_allow_html=True)
     with c3: st.button("➡️", on_click=change_hole, args=(1,), use_container_width=True)
 
     h = st.session_state.h_idx
@@ -58,9 +59,10 @@ with tab_in:
         existing = conn.query(f"SELECT winner FROM ryder_scores WHERE match_id = '{match_choice}' AND hole = {h}", ttl=0)
         if not existing.empty:
             saved_win = existing.iloc[0]['winner']
-    except:
+    except Exception:
         pass
 
+    st.write("Who won this hole?")
     cg, ch, cb = st.columns(3)
     if cg.button("GABE", type="primary" if saved_win == "Gabe" else "secondary", use_container_width=True):
         save_score(match_choice, h, "Gabe")
@@ -73,12 +75,12 @@ with tab_in:
         st.rerun()
 
 with tab_track:
-    st.write("### Live Leaderboard")
+    st.write("### Live Scores")
     try:
         df = conn.query("SELECT * FROM ryder_scores ORDER BY match_id, hole", ttl=0)
         if not df.empty:
             st.dataframe(df, use_container_width=True, hide_index=True)
         else:
             st.info("No scores in the cloud yet.")
-    except:
+    except Exception:
         st.warning("Connecting to cloud...")
