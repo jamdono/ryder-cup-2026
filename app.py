@@ -13,16 +13,16 @@ CHISLEHURST_MAP = {
 
 st.set_page_config(page_title="Ryder Cup 2026", layout="centered")
 
-# 2. CLOUD DATABASE CONNECTION
-# This uses the TiDB secrets you just pasted
+# 2. DATABASE CONNECTION
+# This uses the TiDB secrets you pasted earlier
 conn = st.connection('tidb', type='sql')
 
-# Initialize Table (Runs once)
+# Initialize Table
 with conn.session as s:
     s.execute('CREATE TABLE IF NOT EXISTS ryder_scores (match_id VARCHAR(50), hole INT, winner VARCHAR(20), PRIMARY KEY (match_id, hole));')
     s.commit()
 
-# --- NAVIGATION ---
+# --- HELPERS ---
 if 'h_idx' not in st.session_state: st.session_state.h_idx = 1
 
 def change_hole(delta):
@@ -35,31 +35,29 @@ def save_score(m, h, w):
             params={"m": m, "h": h, "w": w}
         )
         s.commit()
-    st.toast("Syncing with cloud...")
+    st.toast(f"Synced {w} for Hole {h}!")
 
 # --- UI ---
 st.title("🏆 RYDER CUP 2026")
 tab_in, tab_track = st.tabs(["⛳ RECORD", "📊 TRACKER"])
 
 with tab_in:
-    match_list = ["Match 1", "Match 2", "Match 3", "Match 4", "Match 5"]
-    match_choice = st.selectbox("Select Match", match_list)
+    match_choice = st.selectbox("Select Match", ["Match 1", "Match 2", "Match 3", "Match 4", "Match 5"])
     
     c1, c2, c3 = st.columns([1, 2, 1])
     with c1: st.button("⬅️", on_click=change_hole, args=(-1,), use_container_width=True)
-    with c2: st.markdown(f"<h3 style='text-align: center;'>HOLE {st.session_state.h_idx}</h3>", unsafe_allow_html=True)
+    with c2: st.markdown(f"<h3 style='text-align: center; margin: 0;'>HOLE {st.session_state.h_idx}</h3>", unsafe_allow_html=True)
     with c3: st.button("➡️", on_click=change_hole, args=(1,), use_container_width=True)
 
     h = st.session_state.h_idx
     st.info(f"Par {CHISLEHURST_MAP[h]['par']} | SI {CHISLEHURST_MAP[h]['si']}")
 
-    # Get Winner for Highlight
+    # Check for highlight
     saved_win = None
     existing = conn.query(f"SELECT winner FROM ryder_scores WHERE match_id = '{match_choice}' AND hole = {h}", ttl=0)
     if not existing.empty:
         saved_win = existing.iloc[0]['winner']
 
-    st.write("Who won this hole?")
     cg, ch, cb = st.columns(3)
     if cg.button("GABE", type="primary" if saved_win == "Gabe" else "secondary", use_container_width=True):
         save_score(match_choice, h, "Gabe")
@@ -72,7 +70,7 @@ with tab_in:
         st.rerun()
 
 with tab_track:
-    st.write("### Live Scores")
+    st.write("### Live Leaderboard")
     df = conn.query("SELECT * FROM ryder_scores ORDER BY match_id, hole", ttl=0)
     if not df.empty:
         st.dataframe(df, use_container_width=True, hide_index=True)
