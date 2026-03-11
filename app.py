@@ -102,7 +102,9 @@ with tab_in:
         session_label = "FRONT 9" if current_h <= 9 else "BACK 9"
     else:
         # Force singles to Hole 1-9
-        if current_h > 9: st.session_state.h_idx = 1; current_h = 1
+        if current_h > 9: 
+            st.session_state.h_idx = 1
+            current_h = 1
         session_range = range(1, 10)
         session_label = "SINGLES 9"
 
@@ -112,12 +114,15 @@ with tab_in:
     c1, c2, c3 = st.columns([1, 2, 1])
     with c1: 
         if st.button("⬅️", use_container_width=True, key="p1"):
-            st.session_state.h_idx = max(1, current_h - 1); st.rerun()
-    with c2: st.markdown(f"<h3 style='text-align: center; margin: 0;'>HOLE {current_h}</h3>", unsafe_allow_html=True)
+            st.session_state.h_idx = max(1, current_h - 1)
+            st.rerun()
+    with c2: 
+        st.markdown(f"<h3 style='text-align: center; margin: 0;'>HOLE {current_h}</h3>", unsafe_allow_html=True)
     with c3:
         max_limit = 18 if phase == "Morning Pairs" else 9
         if st.button("➡️", use_container_width=True, key="n1"):
-            st.session_state.h_idx = min(max_limit, current_h + 1); st.rerun()
+            st.session_state.h_idx = min(max_limit, current_h + 1)
+            st.rerun()
 
     st.info(f"Par {CHISLEHURST_MAP[current_h]['par']} | SI {CHISLEHURST_MAP[current_h]['si']}")
 
@@ -143,4 +148,11 @@ with tab_track:
     for m in PAIRS_MATCHES:
         f_s, _, _ = calculate_session_result(all_data, m, range(1, 10))
         b_s, _, _ = calculate_session_result(all_data, m, range(10, 19))
-        st.markdown(f"<div style='padding: 8px; background: #f8f9fa; border-radius: 5px; margin-bottom: 5px; font-size: 13px;'><b>{m}</b>: F9: {f_s} | B9: {b_s}</div>", unsafe_allow
+        st.markdown(f"<div style='padding: 8px; background: #f8f9fa; border-radius: 5px; margin-bottom: 5px; font-size: 13px;'><b>{m}</b>: F9: {f_s} | B9: {b_s}</div>", unsafe_allow_html=True)
+    
+    st.write("### Afternoon Singles (10 pts)")
+    for m in SINGLES_MATCHES:
+        s_s, _, _ = calculate_session_result(all_data, m, range(1, 10))
+        st.markdown(f"<div style='padding: 8px; background: #f8f9fa; border-radius: 5px; margin-bottom: 5px; font-size: 13px;'><b>{m}</b>: {s_s}</div>", unsafe_allow_html=True)
+    
+    if st.button("🔄 Sync All Scores", use_container_width=True): st.rerun()
