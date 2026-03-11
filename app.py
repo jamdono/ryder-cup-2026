@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 
-# 1. DATA: CHISLEHURST GC
+# 1. COURSE DATA
 CHISLEHURST_MAP = {
     1: {"par": 5, "si": 11}, 2: {"par": 4, "si": 7},  3: {"par": 3, "si": 3},
     4: {"par": 4, "si": 15}, 5: {"par": 3, "si": 17}, 6: {"par": 4, "si": 1},
@@ -13,80 +13,68 @@ CHISLEHURST_MAP = {
 
 st.set_page_config(page_title="Ryder Cup 2026", layout="centered")
 
-# --- INITIALIZE STATE ---
-if 'master_scores' not in st.session_state:
-    st.session_state.master_scores = {}
+# 2. CLOUD DATABASE CONNECTION
+# This uses the TiDB secrets you just pasted
+conn = st.connection('tidb', type='sql')
 
-if 'h_idx' not in st.session_state:
-    st.session_state.h_idx = 1
+# Initialize Table (Runs once)
+with conn.session as s:
+    s.execute('CREATE TABLE IF NOT EXISTS ryder_scores (match_id VARCHAR(50), hole INT, winner VARCHAR(20), PRIMARY KEY (match_id, hole));')
+    s.commit()
 
-# --- CALLBACKS ---
-def next_hole():
-    if st.session_state.h_idx < 18:
-        st.session_state.h_idx += 1
+# --- NAVIGATION ---
+if 'h_idx' not in st.session_state: st.session_state.h_idx = 1
 
-def prev_hole():
-    if st.session_state.h_idx > 1:
-        st.session_state.h_idx -= 1
+def change_hole(delta):
+    st.session_state.h_idx = max(1, min(18, st.session_state.h_idx + delta))
 
-def save_score(m_name, h_num, win):
-    if m_name not in st.session_state.master_scores:
-        st.session_state.master_scores[m_name] = {}
-    st.session_state.master_scores[m_name][h_num] = win
-    st.toast(f"Hole {h_num} Recorded!")
+def save_score(m, h, w):
+    with conn.session as s:
+        s.execute(
+            'INSERT INTO ryder_scores (match_id, hole, winner) VALUES (:m, :h, :w) ON DUPLICATE KEY UPDATE winner = :w',
+            params={"m": m, "h": h, "w": w}
+        )
+        s.commit()
+    st.toast("Syncing with cloud...")
 
 # --- UI ---
 st.title("🏆 RYDER CUP 2026")
-
 tab_in, tab_track = st.tabs(["⛳ RECORD", "📊 TRACKER"])
 
 with tab_in:
-    match_choice = st.selectbox("Select Match", ["Match 1", "Match 2", "Match 3", "Match 4", "Match 5"])
+    match_list = ["Match 1", "Match 2", "Match 3", "Match 4", "Match 5"]
+    match_choice = st.selectbox("Select Match", match_list)
     
-    # STEPPER
     c1, c2, c3 = st.columns([1, 2, 1])
-    with c1:
-        st.button("⬅️", on_click=prev_hole, use_container_width=True)
-    with c2:
-        st.markdown(f"<h3 style='text-align: center; margin: 0;'>HOLE {st.session_state.h_idx}</h3>", unsafe_allow_html=True)
-    with c3:
-        st.button("➡️", on_click=next_hole, use_container_width=True)
+    with c1: st.button("⬅️", on_click=change_hole, args=(-1,), use_container_width=True)
+    with c2: st.markdown(f"<h3 style='text-align: center;'>HOLE {st.session_state.h_idx}</h3>", unsafe_allow_html=True)
+    with c3: st.button("➡️", on_click=change_hole, args=(1,), use_container_width=True)
 
     h = st.session_state.h_idx
     st.info(f"Par {CHISLEHURST_MAP[h]['par']} | SI {CHISLEHURST_MAP[h]['si']}")
 
-    # Check saved result
-    current_match_results = st.session_state.master_scores.get(match_choice, {})
-    saved_win = current_match_results.get(h, None)
+    # Get Winner for Highlight
+    saved_win = None
+    existing = conn.query(f"SELECT winner FROM ryder_scores WHERE match_id = '{match_choice}' AND hole = {h}", ttl=0)
+    if not existing.empty:
+        saved_win = existing.iloc[0]['winner']
 
     st.write("Who won this hole?")
     cg, ch, cb = st.columns(3)
-    
-    with cg:
-        st.button("GABE", 
-                  type="primary" if saved_win == "Gabe" else "secondary", 
-                  use_container_width=True, 
-                  on_click=save_score, args=(match_choice, h, "Gabe"))
-    with ch:
-        st.button("HALVE", 
-                  type="primary" if saved_win == "Halve" else "secondary", 
-                  use_container_width=True, 
-                  on_click=save_score, args=(match_choice, h, "Halve"))
-    with cb:
-        st.button("BOT.", 
-                  type="primary" if saved_win == "Bottomley" else "secondary", 
-                  use_container_width=True, 
-                  on_click=save_score, args=(match_choice, h, "Bottomley"))
+    if cg.button("GABE", type="primary" if saved_win == "Gabe" else "secondary", use_container_width=True):
+        save_score(match_choice, h, "Gabe")
+        st.rerun()
+    if ch.button("HALVE", type="primary" if saved_win == "Halve" else "secondary", use_container_width=True):
+        save_score(match_choice, h, "Halve")
+        st.rerun()
+    if cb.button("BOT.", type="primary" if saved_win == "Bot." else "secondary", use_container_width=True):
+        save_score(match_choice, h, "Bot.")
+        st.rerun()
 
 with tab_track:
     st.write("### Live Scores")
-    if st.session_state.master_scores:
-        summary_data = []
-        for m, holes in st.session_state.master_scores.items():
-            for h_num, win in holes.items():
-                summary_data.append({"Match": m, "Hole": h_num, "Winner": win})
-        
-        df = pd.DataFrame(summary_data).sort_values(by=["Match", "Hole"])
+    df = conn.query("SELECT * FROM ryder_scores ORDER BY match_id, hole", ttl=0)
+    if not df.empty:
         st.dataframe(df, use_container_width=True, hide_index=True)
     else:
-        st.write("No scores recorded yet.")
+        st.info("No scores in the cloud yet.")
