@@ -1,2 +1,2 @@
-st-mysql-connector
-sqlalchemy
+PyMySQL
+SQLAlchemy
